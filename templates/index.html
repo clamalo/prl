@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block body %}
+<h1 class="mb-4">Pseudo‑RL Prompt Refinement</h1>
+<form action="{{ url_for('generate') }}" method="post">
+  <div class="mb-3">
+    <label class="form-label"><strong>Demo data (agent input sample)</strong></label>
+    <textarea name="demo_data" class="form-control" rows="8" required></textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label"><strong>Desired output description (rough)</strong></label>
+    <textarea name="output_desc" class="form-control" rows="4" required></textarea>
+  </div>
+  <button class="btn btn-primary">Generate candidate prompts ▶︎</button>
+</form>
+{% endblock %}

@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block body %}
+<h2>Iteration {{ iteration }}</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <p class="mb-0">Select the <em>better</em> output (click panel or use ← / → arrows).</p>
+  <button id="viewPromptsBtn" class="btn btn-outline-secondary btn-sm">
+    View Prompts
+  </button>
+</div>
+
+<!-- Loading Animation -->
+<div id="loading" class="text-center" style="display: none;">
+  <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+    <span class="visually-hidden">Loading...</span>
+  </div>
+  <div class="mt-3">
+    <h4>Generating new outputs...</h4>
+    <p class="text-muted">Please wait while we create the next comparison.</p>
+  </div>
+</div>
+
+<!-- Prompts Modal -->
+<div id="promptsModal" class="modal fade" tabindex="-1" aria-labelledby="promptsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="promptsModalLabel">Current Prompts</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-md-6">
+            <h6 class="text-primary">LEFT Prompt</h6>
+            <div class="card">
+              <div class="card-body">
+                <pre id="leftPrompt" style="white-space: pre-wrap; font-size: 0.9em;"></pre>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <h6 class="text-success">RIGHT Prompt</h6>
+            <div class="card">
+              <div class="card-body">
+                <pre id="rightPrompt" style="white-space: pre-wrap; font-size: 0.9em;"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="panels" class="row">
+  <div class="col-md-6">
+    <div id="left" class="card h-100 border-primary selectable">
+      <div class="card-header text-bg-primary">LEFT</div>
+      <div class="card-body"><pre style="white-space:pre-wrap">{{ out_left }}</pre></div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div id="right" class="card h-100 border-success selectable">
+      <div class="card-header text-bg-success">RIGHT</div>
+      <div class="card-body"><pre style="white-space:pre-wrap">{{ out_right }}</pre></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// State management
+let isLoading = false;
+
+// helpers -------------------------------------------------------------
+function showLoading() {
+  const loading = document.getElementById("loading");
+  const panels = document.getElementById("panels");
+  
+  isLoading = true;
+  
+  if (loading) loading.style.display = "block";
+  if (panels) {
+    panels.style.display = "none";
+  }
+}
+
+function hideLoading() {
+  const loading = document.getElementById("loading");
+  const panels = document.getElementById("panels");
+  
+  isLoading = false;
+  
+  if (loading) loading.style.display = "none";
+  if (panels) {
+    // Restore Bootstrap flex display instead of block
+    panels.style.display = "flex";
+  }
+}
+
+function sendVote(winner) {
+  // Prevent multiple votes while loading
+  if (isLoading) {
+    console.log("Already loading, ignoring vote");
+    return;
+  }
+  
+  console.log("Sending vote:", winner);
+  
+  // Show loading animation and hide panels
+  showLoading();
+  
+  fetch("{{ url_for('vote') }}", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ exp_id: "{{ exp_id }}", winner })
+  })
+  .then(r => {
+    console.log("Response status:", r.status);
+    if (!r.ok) {
+      throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+    }
+    return r.json();
+  })
+  .then(data => {
+    console.log("Received data:", data);
+    updatePanels(data);
+    // Hide loading animation and show panels
+    hideLoading();
+  })
+  .catch(error => {
+    console.error("Error during vote:", error);
+    // Hide loading animation and show panels on error
+    hideLoading();
+    alert("Error submitting vote: " + error.message);
+  });
+}
+
+function updatePanels(data) {
+  console.log("Updating panels with:", data);
+  const h2 = document.querySelector("h2");
+  const leftPre = document.querySelector("#left pre");
+  const rightPre = document.querySelector("#right pre");
+  
+  if (h2) h2.innerText = `Iteration ${data.iteration}`;
+  if (leftPre) leftPre.innerText = data.left;
+  if (rightPre) rightPre.innerText = data.right;
+}
+
+function loadPrompts() {
+  console.log("Loading prompts...");
+  
+  fetch("{{ url_for('get_prompts', exp_id=exp_id) }}")
+    .then(r => {
+      console.log("Prompts response status:", r.status);
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+      }
+      return r.json();
+    })
+    .then(data => {
+      console.log("Received prompts:", data);
+      const leftPrompt = document.getElementById("leftPrompt");
+      const rightPrompt = document.getElementById("rightPrompt");
+      
+      if (leftPrompt) leftPrompt.textContent = data.left_prompt;
+      if (rightPrompt) rightPrompt.textContent = data.right_prompt;
+      
+      // Show the modal
+      const modal = new bootstrap.Modal(document.getElementById('promptsModal'));
+      modal.show();
+    })
+    .catch(error => {
+      console.error("Error loading prompts:", error);
+      alert("Error loading prompts: " + error.message);
+    });
+}
+
+// wait for DOM to be ready
+document.addEventListener("DOMContentLoaded", function() {
+  console.log("DOM loaded, setting up event listeners");
+  
+  // View Prompts button handler
+  const viewPromptsBtn = document.getElementById("viewPromptsBtn");
+  if (viewPromptsBtn) {
+    viewPromptsBtn.addEventListener("click", () => {
+      console.log("View Prompts button clicked");
+      loadPrompts();
+    });
+  } else {
+    console.error("View Prompts button not found");
+  }
+  
+  // click handlers -------------------------------------------------------
+  const leftPanel = document.querySelector("#left");
+  const rightPanel = document.querySelector("#right");
+  
+  if (leftPanel) {
+    leftPanel.addEventListener("click", () => {
+      console.log("Left panel clicked");
+      sendVote("left");
+    });
+  } else {
+    console.error("Left panel not found");
+  }
+  
+  if (rightPanel) {
+    rightPanel.addEventListener("click", () => {
+      console.log("Right panel clicked");
+      sendVote("right");
+    });
+  } else {
+    console.error("Right panel not found");
+  }
+
+  // key handlers ---------------------------------------------------------
+  document.addEventListener("keydown", evt => {
+    // Ignore keyboard input while loading
+    if (isLoading) {
+      console.log("Loading in progress, ignoring keyboard input");
+      return;
+    }
+    
+    console.log("Key pressed:", evt.key);
+    if (evt.key === "ArrowLeft") {
+      console.log("Left arrow pressed");
+      sendVote("left");
+    }
+    if (evt.key === "ArrowRight") {
+      console.log("Right arrow pressed");
+      sendVote("right");
+    }
+  });
+});
+</script>
+{% endblock %}
