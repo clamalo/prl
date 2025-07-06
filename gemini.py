@@ -60,6 +60,30 @@ def run_prompt_on_data(prompt: str, demo_data: str) -> str:
     return _call(user_msg, system=system_msg)
 
 
+def _apply_patch(prompt: str, patch: str) -> str:
+    """Apply text replacements from the mutator patch. If the patch provides
+    pairs of 'Original:' and 'Revised:' lines, replace occurrences of each
+    original line with its revision. Otherwise, treat the patch as text to
+    append to the prompt."""
+    new_prompt = prompt
+    replacements = []
+    orig = None
+    for line in patch.splitlines():
+        line = line.strip()
+        if line.startswith('Original:'):
+            orig = line[len('Original:'):].strip()
+        elif line.startswith('Revised:') and orig is not None:
+            revised = line[len('Revised:'):].strip()
+            replacements.append((orig, revised))
+            orig = None
+    if replacements:
+        for o, r in replacements:
+            new_prompt = new_prompt.replace(o, r)
+        return new_prompt
+    if patch:
+        return f"{prompt}\n{patch if patch.startswith('\n') else '\n' + patch}"
+    return prompt
+
 # -------------------------------------------------------------------------
 def mutate_prompt(prompt: str) -> str:
     """Ask Gemini to create a slight mutation of the prompt, returning the
@@ -76,8 +100,6 @@ Keep changes subtle – adjust tone, add an example, change list style, etc.
     try:
         patch_obj = json.loads(resp)
         patch = patch_obj["patch"].strip()
-        # simplest approach: append the patch to the original prompt
-        return f"{prompt}\n\n# --- Mutator patch ---\n{patch}"
+        return _apply_patch(prompt, patch)
     except Exception:
-        # if parsing fails, just append raw response
-        return f"{prompt}\n\n# --- Mutator patch (raw) ---\n{resp}"
+        return _apply_patch(prompt, resp.strip())
