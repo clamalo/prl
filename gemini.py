@@ -5,11 +5,17 @@ Environment:
     GEMINI_API_KEY    – required
 """
 
-import os, json
+import os
+import json
 import google.generativeai as genai
 from google.generativeai import types
 
-genai.configure(api_key="AIzaSyBG3_kufdSrTgT2JN95dzo2t4kIdh33bjI")
+# API key is provided via environment variable to avoid hard-coding secrets
+API_KEY = os.environ.get("GEMINI_API_KEY")
+if not API_KEY:
+    raise RuntimeError("GEMINI_API_KEY environment variable is required")
+
+genai.configure(api_key=API_KEY)
 MODEL_NAME = "gemini-2.0-flash"
 
 # single global model instance is fine
@@ -78,7 +84,8 @@ def _apply_patch(prompt: str, patch: str) -> str:
             orig = None
     if replacements:
         for o, r in replacements:
-            new_prompt = new_prompt.replace(o, r)
+            # replace only the first occurrence of each original segment
+            new_prompt = new_prompt.replace(o, r, 1)
         return new_prompt
     if patch:
         return f"{prompt}\n{patch if patch.startswith('\n') else '\n' + patch}"
